@@ -1,0 +1,92 @@
+#!/bin/bash
+#
+# . tojob <job-id>        <--> source tojob <job-id>
+#                          or
+# . tojob -n <job-index>  <--> source tojob -n<job-index>
+#
+# Move to the work directory of the SLURM job
+#
+# Copyright (c) 2024, Somrath Kanoksirirath.
+# All rights reserved under BSD 3-clause license.
+
+#DIRKEY="/"
+DIRKEY="/lustrefs/"
+
+if [ -z "${1}" ]; then
+  echo "*** At least an input option/argument is expected ***"
+  echo "Usage: '. tojob <job-id>'  or  '. tojob -n <job-index>'"
+  return 0
+fi
+
+if [ "${1}" = "-h" ]; then
+  echo "Usage: '. tojob <job-id>'  or  '. tojob -n <job-index>'"
+  return 0
+fi
+
+if [ "${1}" = "--help" ]; then
+  echo "Usage: '. tojob <job-id>'  or  '. tojob -n <job-index>'"
+  return 0
+fi
+
+if [ "${1}" = "-help" ]; then
+  echo "Usage: '. tojob <job-id>'  or  '. tojob -n <job-index>'"
+  return 0
+fi
+
+
+function gotojob()
+{
+  JOBID=${1}
+
+  DIR=$(scontrol --quiet show job ${JOBID} | grep 'WorkDir=')
+  DIR=${DIR#*WorkDir=}
+
+  if [ -z "${DIR}" ]; then
+    DIR=$(sacct -j ${JOBID} --format=workdir%500 | grep ${DIRKEY})
+    DIR=$(echo ${DIR##*${DIRKEY}} | tr -d ' ')
+    if [ -n "${DIR}" ]; then
+      DIR=${DIRKEY}${DIR}
+    fi
+  fi
+
+  if [ -n "${DIR}" ]; then
+    if [ -d ${DIR} ]; then
+      cd ${DIR}
+      echo " Work directory of JobID ${JOBID} "
+    else
+      echo " ${DIR} does NOT exists."
+      echo " The work directory of JobID ${JOBID} is no longer accessible."
+    fi
+  else
+    echo " Cannot get the work directory of JobID '${JOBID}' from SLURM, your job may be too old."
+  fi
+}
+
+
+if [ "${1}" = "-n" ]; then
+
+  GOTO_INDEX=${2}
+  if [ -z "${GOTO_INDEX}" ]; then
+    echo "Error:: Missing index for -n option"
+    exit
+  fi
+
+  INDEX=0
+  while read -r line
+  do
+    INDEX=$((${INDEX}+1))
+    if [ ${INDEX} -eq ${GOTO_INDEX} ]; then
+      JOBID=${line%% *}
+      JOBID=${JOBID%% *}
+      gotojob ${JOBID}
+    fi
+
+  done < <(squeue --me --long | grep "${USER}")
+ 
+else
+
+  gotojob "${1}"
+
+fi
+
+

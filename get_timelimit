@@ -1,0 +1,131 @@
+#!/bin/bash
+#
+# get_timelimit
+#
+# Parse timelimit of the SLURM job
+#
+# Copyright (c) 2024, Somrath Kanoksirirath.
+# All rights reserved under BSD 3-clause license.
+
+PRGNAME=${0##*/}
+TIMEUNIT=MIN
+ROUNDUP=
+JOBID=
+
+this_usage () {
+  printf "Usage: ${PRGNAME} [OPTIONS]...\n"
+  printf "Parse timelimit of the Slurm job\n"
+  printf "\n"
+  printf "OPTIONS:\n"
+  printf "  -j <job-id>      specify single job id\n"
+  printf "  -H, --hour       job timelimit in hours\n"
+  printf "  -M, --minute     job timelimit in minutes\n"
+  printf "  -S, --second     job timelimit in seconds (default)\n"
+  printf "  --round-up       return ceil, otherwise floor\n"
+  printf "  -h, --help       print this usage\n"
+  printf "\n"
+}
+
+# ----------------------
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -j)
+      if [ -n "$2" ]; then
+        JOBID=$2
+      fi
+      shift
+      ;;
+    -H | --hour)
+      TIMEUNIT=HOUR
+      ;;
+    -M | --minute)
+      TIMEUNIT=MIN
+      ;;
+    -S | --second)
+      TIMEUNIT=SEC
+      ;;
+    --round-up)
+      ROUNDUP=TRUE
+      ;;
+    -h | --help)
+      this_usage
+      exit 0
+      ;;
+    *)
+      # Silently ignore unknown arguments
+      ;;
+  esac
+  shift
+done
+
+if [ -z "${JOBID}" ]; then
+  if [ -z "${SLURM_JOBID}" ]; then
+    echo "${PRGNAME}: error: SLURM_JOBID is not specified."
+    exit 1
+  else
+    JOBID=${SLURM_JOBID}
+  fi
+fi
+
+timelimit=$(scontrol --quiet show job "${JOBID}" | grep 'TimeLimit=')
+timelimit=${timelimit#*TimeLimit=}
+timelimit=${timelimit%% *}
+
+if [ -z "${timelimit}" ]; then
+  timelimit=$(sacct -j "${JOBID}" --format=timelimit -X --noheader | tr -d ' ')
+fi
+
+if [ -z "${timelimit}" ]; then
+  echo "${PRGNAME}: error: Cannot get timelimit from either scontrol or sacct."
+  exit 1
+fi
+
+
+# --- Calculate ---
+
+if [[ ${timelimit} != *-* ]]; then
+  timelimit="0-${timelimit}"
+fi
+
+IFS="-:" read -r DD HH MM SS <<< "${timelimit}"
+
+if [ "${ROUNDUP}" = "TRUE" ]; then
+
+  case "$TIMEUNIT" in
+    HOUR)
+      if [[ ${MM} -ne "0" || ${SS} -ne "0" ]]; then
+        echo $((24*${DD}+${HH}+1))
+      else
+        echo $((24*${DD}+${HH}))
+      fi
+      ;;
+    MIN)
+      if [ ${SS} -ne "0" ]; then
+        echo $((1440*${DD}+60*${HH}+${MM}+1))
+      else
+        echo $((1440*${DD}+60*${HH}+${MM}))
+      fi
+      ;;
+    *)
+      echo $((86400*${DD}+3600*${HH}+60*${MM}+${SS}))
+      ;;
+  esac
+
+else
+
+  case "$TIMEUNIT" in
+    HOUR)
+      echo $((24*${DD}+${HH}))
+      ;;
+    MIN)
+      echo $((1440*${DD}+60*${HH}+${MM}))
+      ;;
+    *)
+      echo $((86400*${DD}+3600*${HH}+60*${MM}+${SS}))
+      ;;
+  esac
+
+fi
+
+

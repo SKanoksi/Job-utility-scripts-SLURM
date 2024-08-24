@@ -1,0 +1,27 @@
+#!/bin/bash
+#
+# cpu_usage <job-id> <single-node-name> [extra-srun-options]
+#
+# Display CPU utilization when running a SLURM job on the compute node, using top command
+#
+# Copyright (c) 2024, Somrath Kanoksirirath.
+# All rights reserved under BSD 3-clause license.
+
+if [ "${1}" = "-h" ]; then
+  echo "Usage: cpu_usage <job-id> <single-node-name> [extra-srun-options]"
+  exit
+fi
+
+if [ "${1}" = "--help" ]; then
+  echo "Usage: cpu_usage <job-id> <single-node-name> [extra-srun-options]"
+  exit
+fi
+
+if [ "${1}" = "-help" ]; then
+  echo "Usage: cpu_usage <job-id> <single-node-name> [extra-srun-options]"
+  exit
+fi
+
+srun --jobid=${1} -w ${2} -N1 -c1 --ntasks-per-node=1 ${@:3} --overlap top -b -n1 -Eg -u ${USER}
+
+

@@ -1,0 +1,23 @@
+#!/bin/bash
+#
+# myq
+#
+# An alise of "squeue --me" with job index to be used with 'tojob' (. tojob -n 1)
+#
+# Copyright (c) 2024, Somrath Kanoksirirath.
+# All rights reserved under BSD 3-clause license.
+
+HEADER=$(squeue --me | head -n 1)
+LINE=(${HEADER})
+printf "INDEX %12s %9s %8s %8s %2s %10s %6s %-s\n" ${LINE[0]} ${LINE[1]} ${LINE[2]} ${LINE[3]} ${LINE[4]} ${LINE[5]} ${LINE[6]} ${LINE[7]}
+
+INDEX=0
+while read -r line
+do
+  INDEX=$((${INDEX}+1))
+  LINE=(${line})
+  printf "%3s - %12s %9s %8s %8s %2s %10s %6s %-s\n" ${INDEX} ${LINE[0]} ${LINE[1]} ${LINE[2]} ${LINE[3]} ${LINE[4]} ${LINE[5]} ${LINE[6]} ${LINE[7]}
+
+done < <(squeue --me | grep "${USER}")
+
+

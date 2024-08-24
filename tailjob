@@ -1,0 +1,79 @@
+#!/bin/bash
+#
+# tailjob [job-id]
+#
+# Tail StdOut of currently running SLURM jobs
+#
+# Copyright (c) 2024, Somrath Kanoksirirath.
+# All rights reserved under BSD 3-clause license.
+
+if [ "${1}" = "-h" ]; then
+  echo "Usage: tailjob [single-job-id]"
+  echo "(Default = all running jobs)"
+  exit
+fi
+
+if [ "${1}" = "--help" ]; then
+  echo "Usage: tailjob [single-job-id]"
+  echo "(Default = all running jobs)"
+  exit
+fi
+
+if [ "${1}" = "-help" ]; then
+  echo "Usage: tailjob [single-job-id]"
+  echo "(Default = all running jobs)"
+  exit
+fi
+
+
+color_show=$(tput setaf 10)
+color_hide=$(tput setaf 8)
+color_orig=$(tput sgr0)
+
+
+function displaylog()
+{
+  JOBID=${1}
+  JOBINFO=$(scontrol --quiet show job ${JOBID})
+  LOGFILE=$(echo "${JOBINFO}" | grep 'StdOut=')
+  LOGFILE=${LOGFILE#*StdOut=}
+  JOBNAME=$(echo "${JOBINFO}" | grep 'JobName=')
+  JOBNAME=${JOBNAME#*JobName=}
+
+  printf "%s\n" "${color_show}vvv '${JOBNAME}' (${JOBID}) vvv"
+  if [ -n "${LOGFILE}" ]; then
+    if [ -f ${LOGFILE} ]; then
+      printf "%s\n" "${color_hide} ${LOGFILE} ${color_orig}"
+      tail -n${2} ${LOGFILE}
+    else
+      printf "%s\n" "${color_show} ${LOGFILE} is missing."
+    fi
+  else
+    printf "%s\n" "${color_show} Cannot obtain the log file location"
+  fi
+  printf "%s\n\n" "${color_show}^^^ '${JOBNAME}' (${JOBID}) ^^^${color_orig}"
+}
+
+
+if [ -n "${1}" ]; then
+
+  INPUTJOB=${1%%,*}
+  CHECKJOB=$(squeue --long | grep "${INPUTJOB}")
+  if [ -z "${CHECKJOB}" ]; then
+    echo "Sorry the job is NOT currently RUNNING."
+    echo "Use \". tojob ${INPUTJOB}\" to directly visit its work direcitory."
+  else
+    displaylog "${INPUTJOB}" 30
+  fi
+
+else
+
+  while read -r line
+  do
+    JOBID=${line%% *}
+    displaylog "${JOBID}" 10
+  done < <(squeue --me --long | grep 'RUNNING')
+
+fi
+
+

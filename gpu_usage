@@ -1,0 +1,30 @@
+#!/bin/bash
+#
+# gpu_usage <job-id> <single-node-name> [extra-srun-options]
+#
+# Display GPU utilization when running a SLURM job on the compute node, using nvidia-smi command
+#
+# Copyright (c) 2024, Somrath Kanoksirirath.
+# All rights reserved under BSD 3-clause license.
+
+if [ "${1}" = "-h" ]; then
+  echo "Usage: gpu_usage <job-id> <single-node-name> [extra-srun-options]"
+  echo "(Use -G as an extra srun options to match number of allocated GPUs on the node.)"
+  exit
+fi
+
+if [ "${1}" = "--help" ]; then
+  echo "Usage: gpu_usage <job-id> <single-node-name> [extra-srun-options]"
+  echo "(Use -G as an extra srun options to match number of allocated GPUs on the node.)"
+  exit
+fi
+
+if [ "${1}" = "-help" ]; then
+  echo "Usage: gpu_usage <job-id> <single-node-name> [extra-srun-options]"
+  echo "(Use -G as an extra srun options to match number of allocated GPUs on the node.)"
+  exit
+fi
+
+srun --jobid=${1} -w ${2} -N1 -c1 --ntasks-per-node=1 ${@:3} --overlap nvidia-smi
+
+
