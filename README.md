@@ -1,6 +1,8 @@
 # Job-utility-scripts-SLURM
 Simple utility bash scripts for checking SLURM jobs
 
+Version: 0.0.1
+
 1. myq\
    = equivalent to "squeue --me" but with job index, intended to be used with 'tojob'\
    (Usage: myq)
@@ -29,4 +31,6 @@ Simple utility bash scripts for checking SLURM jobs
 7. get_timelimit\
    = parse wall time limit of a job (in hours, minutes, seconds) for using with other scripts/software\
    (see get_timelimit --help)
-   
+
+Installation:
+- Put these files in a directory included in the PATH environment variable.   
