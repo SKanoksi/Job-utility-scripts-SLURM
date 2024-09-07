@@ -1,0 +1,26 @@
+#!/bin/bash
+
+if [ -z ${NUM_GPU_PER_MPI} ]; then
+  echo "Error:: NUM_GPU_PER_MPI is not set."
+  exit 1
+fi
+
+LAST_ID=$((${SLURM_GPUS_ON_NODE}-1))
+DEV_LIST=
+for id in $(seq 0 1 ${LAST_ID})
+do
+  tid=$((${id}/${NUM_GPU_PER_MPI}))
+  if [ ${tid} -eq ${SLURM_LOCALID} ]; then
+    DEV_LIST="${DEV_LIST}${id},"
+  fi
+done
+
+if [ -n ${DEV_LIST} ]; then
+  export CUDA_VISIBLE_DEVICES=${DEV_LIST%,}
+else
+  export CUDA_VISIBLE_DEVICES=
+fi
+
+echo "$(hostname): TASK:${SLURM_PROCID} (locally ${SLURM_LOCALID}) see gloal GPU ID ${SLURM_STEP_GPUS}, use local GPU ID ${CUDA_VISIBLE_DEVICES}"
+
+exec $*

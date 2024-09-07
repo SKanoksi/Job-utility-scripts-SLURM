@@ -1,0 +1,17 @@
+#!/bin/bash
+
+# check_gpu.c
+# = simple program to check GPU, MPI, CPU binding
+
+# --- Compile ---
+
+module purge
+module load craype-x86-milan
+module load PrgEnv-nvhpc
+module load craype-accel-nvidia80
+
+cc -o check_gpu.exe ./check_gpu.c -fopenmp -L${NVIDIA_PATH}/cuda/lib64 -lnvidia-ml -lcudart
+
+
+
+

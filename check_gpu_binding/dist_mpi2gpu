@@ -1,0 +1,9 @@
+#!/bin/bash
+
+# see https://cpe.ext.hpe.com/docs/latest/mpt/mpich/intro_mpi.html
+
+export CUDA_VISIBLE_DEVICES=$((${SLURM_LOCALID}%${SLURM_GPUS_ON_NODE}))
+
+echo "$(hostname): TASK:${SLURM_PROCID} (locally ${SLURM_LOCALID}) see gloal GPU ID ${SLURM_STEP_GPUS}, use local GPU ID ${CUDA_VISIBLE_DEVICES}"
+
+exec $*
