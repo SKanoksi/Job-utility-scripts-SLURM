@@ -32,5 +32,10 @@ Version: 0.0.1
    = parse wall time limit of a job (in hours, minutes, seconds) for using with other scripts/software\
    (see get_timelimit --help)
 
+8. check_gpu_binding\
+   = simple c program to check NVIDIA GPU/CUDA resource binding before using the configuration to run an actual application software\
+   = useful when 'srun --gpu-bind=verbose' or other similar options are unavailable.
+   (see check_gpu_binding/README and examples of job scripts ./check_gpu_binding/*.sh)
+
 Installation:
 - Put these files in a directory included in the PATH environment variable.   
