@@ -4,6 +4,7 @@
 #SBATCH --gpus=5               # Number of GPU card per node
 #SBATCH --cpus-per-gpu=16      # Number of CPUs per GPU
 #SBATCH -t 00:10:00            # Job runtime limit
+#SBATCH -A ltxxxxxx            # Billing account 
 #SBATCH -J BindGPU_adv4        # Job name
 
 # NUM_MPI_PER_GPU=1 --> Every MPI get 1 exclusive GPU
@@ -18,7 +19,9 @@ unset SLURM_CPUS_PER_GPU
 # ---------------
 
 module purge
-module load craype-x86-milan PrgEnv-nvhpc craype-accel-nvidia80
+module load craype-x86-milan
+module load PrgEnv-nvhpc
+module load craype-accel-nvidia80
 
 srun -n${NUM_MPI} -c${NUM_CPUS_PER_MPI} ./dist_mpi2gpu ./check_gpu.exe
 
