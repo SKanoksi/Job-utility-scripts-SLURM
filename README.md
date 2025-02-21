@@ -1,41 +1,53 @@
 # Job-utility-scripts-SLURM
-Simple utility bash scripts for checking SLURM jobs
+Version: 0.1.0
 
-Version: 0.0.1
+Utility functions for 
+- moving between job's working directories and checking logs
+- checking software process and utilization of computing resources, granted for each SLURM job
+- and others
 
-1. myq\
-   = equivalent to "squeue --me" but with job index, intended to be used with 'tojob'\
-   Usage: myq
+### Installation:
 
-2. tojob\
-   = change directory to the job's working directory --- this script needed to be sourced.\
-   Usage: . tojob [job-id]  or  . tojob -n [job-index]
+A. Execute `. slurm_job_util.sh` or `source slurm_job_util.sh` before using, or \
+B. Put `slurm_job_util.sh` it in `/etc/profile.d/`
 
-3. tailjob\
-   = tail StdOut file of all currently running jobs\
-   Usage: tailjob  or  tailjob [job-id]
+### Available commands:
 
-4. cpu_usage\
-   = display CPU utilization of a running job on an allocated node by using top command --- an job step is added per invocation.\
-   Usage: cpu_usage [job-id] [single-alloc-node] [extra-srun-options]
+1. `tojob`\
+   = change directory to the job's working directory.
 
-5. gpu_usage\
-   = display GPU utilization of a running job on an allocated node by using nvidia-smi command --- an job step is added per invocation. 
-   Occasionally, --gpus=Num is needed to be added (as an extra-srun-options) to specify the exact number of GPUs available on the node.\
-   Usage: gpu_usage [job-id] [single-alloc-node] [extra-srun-options]
+2. `tailjob`\
+   = tail StdOut/StdErr file of all currently running jobs
 
-6. get_timeleft\
-   = parse remaining runtime of a running job (in hours, minutes, seconds) for using with other scripts/software\
-   (see get_timeleft --help)
+3. `myq`\
+   = equivalent to "squeue --me" but with job index, intended to be used with 'tojob'
 
-7. get_timelimit\
-   = parse wall time limit of a job (in hours, minutes, seconds) for using with other scripts/software\
-   (see get_timelimit --help)
+4. `cpu_usage <JobID> <NodeName>`\
+   = display CPU utilization of a running job on an allocated node by using top command --- an job step is added per invocation.
 
-8. check_gpu_binding\
+5. `gpu_usage <JobID>`\
+   = display GPU utilization on all allocate nodes of a running job by using nvidia-smi command --- an job step is added per invocation per node. (Note: the previous version is now gpu_usage2)
+
+6. `ps_stat <JobID> <NodeName>`\
+   = display the latest step's processes of a running job on an allocated node by using ps command --- an job step is added per invocation. (Note: get PID from sstat so srun must be used)
+
+7. `rss_usage <JobID> <NodeName>`\
+   = display the total RSS currently used in a running job on an allocated node by using ps+awk command --- an job step is added per invocation. (Note: get PID from sstat so srun must to be used)
+
+8. `cpu_freq_usage <JobID>`\
+   = display the CPU frequency of all allocated CPU cores of a running job by using cpupower command --- an job step is added per invocation per node.
+    
+9. `get_timeleft`\
+   = parse remaining runtime of a running job (in hours, minutes, seconds) for using with other scripts/software
+
+10. `get_timelimit`\
+   = parse wall time limit of a job (in hours, minutes, seconds) for using with other scripts/software
+
+11. check_gpu_binding --> check_gpu.c\
    = simple c program to check NVIDIA GPU/CUDA resource binding before using the configuration to run an actual application software\
-   = useful when 'srun --gpu-bind=verbose' or other similar options are unavailable.
+   = useful when 'srun --gpu-bind=verbose' or other similar options are unavailable.\
    (see check_gpu_binding/README and examples of job scripts ./check_gpu_binding/*.sh)
 
-Installation:
-- Put these files in a directory included in the PATH environment variable.   
+12. check_cpu_binding\
+   = job scripts to check CPU affinity binding (and a simple HelloWorld program as an example)
+   
