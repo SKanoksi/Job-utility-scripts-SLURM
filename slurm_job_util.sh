@@ -117,7 +117,7 @@ function ps_stat(){
   fi
   local JOB_NODE_PIDS=$(sstat -j ${1} -i -n -o pids%2000 | grep "${2}" | awk '{list = $3} END {print list}')
   if [ -n "${JOB_NODE_PIDS}" ]; then
-    srun --jobid=${1} -w ${2} -N1 -c1 --ntasks-per-node=1 -u --overlap ps -p ${JOB_NODE_PIDS} -u ${USER} -o user,pid,thcount,numa,pcpu,rss,vsz,start_time,etime,state,comm rf | numfmt --header --from-unit=1024 --to=iec-i --field 6,7 --padding 6
+    srun --jobid=${1} -w ${2} -N1 -c1 --ntasks-per-node=1 -u --overlap ps -p ${JOB_NODE_PIDS} -o user,pid,thcount,numa,pcpu,rss,vsz,start_time,etime,state,comm rf | numfmt --header --from-unit=1024 --to=iec-i --field 6,7 --padding 6
   else
     printf "\nUsage: ps_stat <your-jobid> <one-of-the-job-nodename>\n\n"
     echo "ERROR:: Cannot get the job's PIDs -- Please check that 1) The JobID and its nodename are correct 2) srun is used in the job script 3) The job is running"
@@ -133,7 +133,7 @@ function rss_usage(){
   local JOB_NODE_PIDS=$(sstat -j ${1} -i -n -o pids%2000 | grep "${2}" | awk '{list = $3} END {print list}')
   if [ -n "${JOB_NODE_PIDS}" ]; then
     echo "Total RSS of all user's processes inside JobID ${1} on ${2}"
-    srun --jobid=${1} -w ${2} -N1 -c1 --ntasks-per-node=1 -u --overlap ps -p ${JOB_NODE_PIDS} -u ${USER} -o rss= | awk '{sum+=$1} END {printf "--> %d KiB = %.2f MiB = %.2f GiB \n", sum, sum/1024, sum/1024/1024}'
+    srun --jobid=${1} -w ${2} -N1 -c1 --ntasks-per-node=1 -u --overlap ps -p ${JOB_NODE_PIDS} -o rss= | awk '{sum+=$1} END {printf "--> %d KiB = %.2f MiB = %.2f GiB \n", sum, sum/1024, sum/1024/1024}'
   else
     printf "\nUsage: rss_usage <your-jobid> <one-of-the-job-nodename>\n\n"
     echo "ERROR:: Cannot get the job's PIDs -- Please check that 1) The JobID and its nodename are correct 2) srun is used in the job script 3) The job is running"
