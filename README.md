@@ -1,5 +1,5 @@
 # Job-utility-scripts-SLURM
-Version: 0.1.0
+Version: 1.1.0
 
 Utility functions for 
 - moving between job's working directories and checking logs
@@ -23,19 +23,19 @@ B. Put `slurm_job_util.sh` it in `/etc/profile.d/`
    = equivalent to "squeue --me" but with job index, intended to be used with 'tojob'
 
 4. `cpu_usage <JobID> <NodeName>`\
-   = display CPU utilization of a running job on an allocated node by using top command --- an job step is added per invocation.
+   = display CPU utilization on all job's allocated nodes using top command --- an job step is added per invocation per node, [NodeName] is optional.
 
 5. `gpu_usage <JobID>`\
-   = display GPU utilization on all allocate nodes of a running job by using nvidia-smi command --- an job step is added per invocation per node. (Note: the previous version is now gpu_usage2)
+   = display GPU utilization on all job's allocated nodes using nvidia-smi command --- an job step is added per invocation per node, [NodeName] is optional.
 
 6. `ps_stat <JobID> <NodeName>`\
-   = display the latest step's processes of a running job on an allocated node by using ps command --- an job step is added per invocation. (Note: get PID from sstat so srun must be used)
+   = display the latest step's processes of a running job using ps command --- an job step is added per invocation per node, [NodeName] is optional. (Note: get PID from sstat so srun must be used)
 
 7. `rss_usage <JobID> <NodeName>`\
-   = display the total RSS currently used in a running job on an allocated node by using ps+awk command --- an job step is added per invocation. (Note: get PID from sstat so srun must to be used)
+   = display the total RSS currently used on all job's allocate nodes using ps+awk command --- an job step is added per invocation per node, [NodeName] is optional. (Note: get PID from sstat so srun must to be used)
 
 8. `cpu_freq_usage <JobID>`\
-   = display the CPU frequency of all allocated CPU cores of a running job by using cpupower command --- an job step is added per invocation per node.
+   = display the CPU frequency of all job's allocated CPU cores using cpupower command --- an job step is added per invocation per node, [NodeName] is optional.
     
 9. `get_timeleft`\
    = parse remaining runtime of a running job (in hours, minutes, seconds) for using with other scripts/software
