@@ -1,169 +1,35 @@
+# ----------------------------------------------------------
 #
-# Job utlity functions -- SLURM
+#  slurm_job_util.sh version 1.1.0
 #
-# Copyright (c) 2024, Somrath Kanoksirirath.
-# All rights reserved under BSD 3-clause license.
+#  Various extra BASH commands for SLURM jobs 
 #
+#  Copyright (c) 2026, Somrath Kanoksirirath.
+#  All rights reserved under BSD 3-clause license.
+# ----------------------------------------------------------
 #
-# *** Hardware utilization ***
-# 1) gpu_usage  <jobid>
-#    gpu_usage2 <jobid> <nodename> [-G <num-gpu-on-node>]
-# 2) cpu_usage  <jobid> <nodename>
-#    ps_stat    <jobid> <nodename>        <-- only if srun step is used
-# 3) rss_usage  <jobid> <nodename>      <-- only if srun step is used
-# 4) cpu_freq_usage <jobid>
+#  *** Hardware utilization ***
+#  1)  gpu_usage <jobid> [nodename]
+#  2)  cpu_usage <jobid> [nodename]
+#  3)    ps_stat <jobid> [nodename]     <-- srun must be used
+#  4)  rss_usage <jobid> [nodename]     <-- srun must be used 
+#  5)  cpu_freq_usage <jobid> [nodename]
 #
-# WARNING: Don’t query too often, since they interferes with your main workload and steal computing time !!!
+#  WARNING: Don’t query too often, since they interferes with your main workload and steal computing time !!!
 #
+#  *** Other utility tools ***
+#  1)  tojob [jobid]
+#  2)  tailjob [jobid]
+#  3)  myq
 #
-# *** Other utility tools ***
-# 1) tojob [jobid]
-# 2) tailjob [jobid]
-# 3) myq
-# 4) get_timelimit
-# 5) get_timeleft
-#
-# ---------------------------
+# ----------------------------------------------------------
 
-function gpu_usage(){
-  if [ -z "${1}" ] || ! [[ ${1} =~ ^[1-9][0-9_]*$ ]]; then
-    echo "Usage: gpu_usage2 <your-jobid>"
-    return 1
-  fi
 
-  function srun_nvidia_smi_query(){
-    echo ""
-    echo "######################################"
-    echo "        ${3} GPUs on ${2}"
-    echo "######################################"
-    srun --input none --jobid=${1} -w ${2} -N1 -n1 -c1 -G${3} -u --overlap nvidia-smi
-    echo ""
-    sleep 0.01
-  }
-
-  local GPU_SET_COUNT="0"
+function __job_loop_over_node(){
+  local QUERY_SET_COUNT="0"
   while read -r line
   do
-    GPU_SET_COUNT=$((${GPU_SET_COUNT}+1))
-
-    local JOB_NODELIST=${line#*Nodes=}
-    JOB_NODELIST=${JOB_NODELIST%% CPU_IDs=*}
-    local JOB_NODE_GPU_COUNT=${line%%(IDX*}
-    JOB_NODE_GPU_COUNT=${JOB_NODE_GPU_COUNT##*GRES=gpu:*:}
-
-    local NODE_PREFIX=${JOB_NODELIST%%[*}
-    if [ "${NODE_PREFIX}" = "${JOB_NODELIST}" ]; then
-      srun_nvidia_smi_query "${1}" "${NODE_PREFIX}" "${JOB_NODE_GPU_COUNT}"
-      continue
-    fi
-
-    JOB_NODELIST=${JOB_NODELIST#*[}
-    JOB_NODELIST=${JOB_NODELIST%%]*}
-    IFS=',' read -ra JOB_NODE_ITEM_LIST <<< "${JOB_NODELIST}"
-    local NODE_NUM=""
-    for NODE_ITEM in "${JOB_NODE_ITEM_LIST[@]}"
-    do
-      if [[ "${NODE_ITEM}" == *"-"* ]]; then
-        for ii in $(seq -f "%03g" ${NODE_ITEM%%-*} 1 ${NODE_ITEM#*-})
-        do
-          srun_nvidia_smi_query "${1}" "${NODE_PREFIX}${ii}" "${JOB_NODE_GPU_COUNT}"
-        done
-      else
-        NODE_NUM=$(printf "%03g" "${NODE_ITEM}")
-        srun_nvidia_smi_query "${1}" "${NODE_PREFIX}${NODE_NUM}" "${JOB_NODE_GPU_COUNT}"
-      fi
-    done
-
-  done < <(scontrol -d --quiet show job ${1} | grep -A 30 "${UID}" | grep 'CPU_IDs')
-
-  if [ ${GPU_SET_COUNT} -eq 0 ]; then
-    echo "ERROR: Invalid JobID was specified. Is your job running?"
-  fi
-}
-
-
-function gpu_usage2(){
-  if [ -z "${2}" ]; then
-    echo "Usage: gpu_usage <your-jobid> <one-of-the-job-nodename> [-G <num-gpu-on-node>]"
-  else
-    srun --jobid=${1} -w ${2} -N1 -c1 --ntasks-per-node=1 ${@:3} -u --overlap nvidia-smi
-    RTC=$?
-    if [ ${RTC} -ne 0 ]; then
-      printf "\nUsage: gpu_usage <your-jobid> <one-of-the-job-nodename> [-G <num-gpu-on-node>]\n\nn"
-    fi
-  fi
-}
-# Note: if use #SBATCH --gpus= and >1 nodes are allocated
-#       --> need to specify -G <Num-GPU-on-node> after <job-node>
-
-
-function cpu_usage(){
-  if [ -z "${2}" ]; then
-    echo "Usage: cpu_usage <your-jobid> <one-of-the-job-nodename>"
-  else
-    srun --jobid=${1} -w ${2} -N1 -c1 --ntasks-per-node=1 -u --overlap top -b -n1 -Eg -u ${USER}
-    RTC=$?
-    if [ ${RTC} -ne 0 ]; then
-      printf "\nUsage: cpu_usage <your-jobid> <one-of-the-job-nodename>\n\n"
-    fi
-  fi
-}
-
-
-function ps_stat(){
-  if [ -z "${2}" ]; then
-    echo "Usage: ps_stat <your-jobid> <one-of-the-job-nodename>"
-    return 1
-  fi
-  local JOB_NODE_PIDS=$(sstat -j ${1} -i -n -o pids%2000 | grep "${2}" | awk '{list = $3} END {print list}')
-  if [ -n "${JOB_NODE_PIDS}" ]; then
-    srun --jobid=${1} -w ${2} -N1 -c1 --ntasks-per-node=1 -u --overlap ps -p ${JOB_NODE_PIDS} -o user,pid,thcount,numa,pcpu,rss,vsz,start_time,etime,state,comm rf | numfmt --header --from-unit=1024 --to=iec-i --field 6,7 --padding 6
-  else
-    printf "\nUsage: ps_stat <your-jobid> <one-of-the-job-nodename>\n\n"
-    echo "ERROR:: Cannot get the job's PIDs -- Please check that 1) The JobID and its nodename are correct 2) srun is used in the job script 3) The job is running"
-  fi
-}
-
-
-function rss_usage(){
-  if [ -z "${2}" ]; then
-    echo "Usage: rss_usage <your-jobid> <one-of-the-job-nodename>"
-    return 1
-  fi
-  local JOB_NODE_PIDS=$(sstat -j ${1} -i -n -o pids%2000 | grep "${2}" | awk '{list = $3} END {print list}')
-  if [ -n "${JOB_NODE_PIDS}" ]; then
-    echo "Total RSS of all user's processes inside JobID ${1} on ${2}"
-    srun --jobid=${1} -w ${2} -N1 -c1 --ntasks-per-node=1 -u --overlap ps -p ${JOB_NODE_PIDS} -o rss= | awk '{sum+=$1} END {printf "--> %d KiB = %.2f MiB = %.2f GiB \n", sum, sum/1024, sum/1024/1024}'
-  else
-    printf "\nUsage: rss_usage <your-jobid> <one-of-the-job-nodename>\n\n"
-    echo "ERROR:: Cannot get the job's PIDs -- Please check that 1) The JobID and its nodename are correct 2) srun is used in the job script 3) The job is running"
-  fi
-}
-
-
-function cpu_freq_usage(){
-  if [ -z "${1}" ] || ! [[ ${1} =~ ^[1-9][0-9_]*$ ]]; then
-    echo "Usage: cpu_freq_usage <your-jobid>"
-    return 1
-  fi
-
-  function srun_cpu_power_query(){
-    echo "######################################"
-    echo " CPUID_[${3}] on ${2}"
-    echo "######################################"
-    if ! [[ ${4} =~ ^[1-9][0-9_]*$ ]]; then
-      srun --input none --jobid=${1} -w ${2} -N1 -c1 --ntasks-per-node=1 -u --overlap cpupower --cpu ${3} frequency-info -f  | grep 'current CPU frequency' | awk '{printf "%3d:  %.3f MHz\n", NR, $4/1000 ;sum+=$4;count++} END  {if (count>0) printf "\nAveraged CPU frequency = %.3f GHz", sum/count/1000000}'
-    else
-      srun --input none --jobid=${1} -w ${2} -N1 -n1 -c1 -G${4} -u --overlap cpupower --cpu ${3} frequency-info -f  | grep 'current CPU frequency' | awk '{printf "%3d:  %.3f MHz\n", NR, $4/1000 ;sum+=$4;count++} END  {if (count>0) printf "\nAveraged CPU frequency = %.3f GHz", sum/count/1000000}'
-    fi
-    printf " on %s\n\n" ${2}
-    sleep 0.01
-  }
-
-  local CPUID_SET_COUNT="0"
-  while read -r line
-  do
-    CPUID_SET_COUNT=$((${CPUID_SET_COUNT}+1))
+    QUERY_SET_COUNT=$((${QUERY_SET_COUNT}+1))
 
     local JOB_NODELIST=${line#*Nodes=}
     JOB_NODELIST=${JOB_NODELIST%% CPU_IDs=*}
@@ -172,34 +38,200 @@ function cpu_freq_usage(){
     local JOB_NODE_GPU_COUNT=${line%%(IDX*}
     JOB_NODE_GPU_COUNT=${JOB_NODE_GPU_COUNT##*GRES=gpu:*:}
 
-    local NODE_PREFIX=${JOB_NODELIST%%[*}
-    if [ "${NODE_PREFIX}" = "${JOB_NODELIST}" ]; then
-      srun_cpu_power_query "${1}" "${NODE_PREFIX}" "${JOB_NODE_CPU_IDS}" "${JOB_NODE_GPU_COUNT}"
-      continue
-    fi
-
-    JOB_NODELIST=${JOB_NODELIST#*[}
-    JOB_NODELIST=${JOB_NODELIST%%]*}
-    IFS=',' read -ra JOB_NODE_ITEM_LIST <<< "${JOB_NODELIST}"
-    local NODE_NUM=""
-    for NODE_ITEM in "${JOB_NODE_ITEM_LIST[@]}"
+    JOB_NODELIST_ARRAY=$(scontrol show hostnames ${JOB_NODELIST})
+    for JOB_NODELIST_ITEM in ${JOB_NODELIST_ARRAY}
     do
-      if [[ "${NODE_ITEM}" == *"-"* ]]; then
-        for ii in $(seq -f "%03g" ${NODE_ITEM%%-*} 1 ${NODE_ITEM#*-})
-        do
-          srun_cpu_power_query "${1}" "${NODE_PREFIX}${ii}" "${JOB_NODE_CPU_IDS}" "${JOB_NODE_GPU_COUNT}"
-        done
-      else
-        NODE_NUM=$(printf "%03g" "${NODE_ITEM}")
-        srun_cpu_power_query "${1}" "${NODE_PREFIX}${NODE_NUM}" "${JOB_NODE_CPU_IDS}" "${JOB_NODE_GPU_COUNT}"
-      fi
+      ${2} "${1}" "${JOB_NODELIST_ITEM}" "${JOB_NODE_CPU_IDS}" "${JOB_NODE_GPU_COUNT}"
     done
-
+    sleep 1
   done < <(scontrol -d --quiet show job ${1} | grep -A 30 "${UID}" | grep 'CPU_IDs')
 
-  if [ ${CPUID_SET_COUNT} -eq 0 ]; then
+  if [ ${QUERY_SET_COUNT} -eq 0 ]; then
     echo "ERROR: Invalid JobID was specified. Is your job running?"
   fi
+}
+
+
+function gpu_usage(){
+  if [ -z "${1}" ] || ! [[ ${1} =~ ^[1-9][0-9_]*$ ]]; then
+    echo "Usage: gpu_usage <your-jobid> [one-of-the-job-nodename]"
+    return 1
+  fi
+  local SINGLE_NODE_NAME=
+  if [ -n "${2}" ]; then
+    if [ "${2::8}" = "lanta-g-" ]; then
+      SINGLE_NODE_NAME="${2}"
+    else
+      echo "ERROR:: Incorrect nodename, must start with 'lanta-g-', omit to query all"
+      return 1
+    fi
+  fi
+
+  function srun_nvidia_smi_query(){
+    if [ -n "${SINGLE_NODE_NAME}" ] && [ "${SINGLE_NODE_NAME}" != "${2}" ]; then
+      return
+    fi
+    if [ "${2::8}" != "lanta-g-" ]; then
+      echo "ERROR:: No GPUs. The job node (${2}) is NOT 'lanta-g-xxx'."
+      return
+    fi
+    echo ""
+    echo "######################################"
+    echo "          ${4} GPUs on ${2}"
+    echo "######################################"
+    srun --input none --jobid=${1} -w ${2} -N1 -n1 -c1 -u --overlap nvidia-smi
+    RTC=$?
+    if [ ${RTC} -ne 0 ]; then
+      printf "\nUsage: gpu_usage <your-jobid> [one-of-the-job-nodename]\n\n"
+    fi    
+    echo ""
+  }
+
+  __job_loop_over_node ${1} srun_nvidia_smi_query
+}
+
+
+function cpu_usage(){
+  if [ -z "${1}" ] || ! [[ ${1} =~ ^[1-9][0-9_]*$ ]]; then
+    echo "Usage: cpu_usage <your-jobid> [one-of-the-job-nodename]"
+    return 1
+  fi
+  local SINGLE_NODE_NAME=
+  if [ -n "${2}" ]; then
+    if [ "${2::6}" = "lanta-" ]; then
+      SINGLE_NODE_NAME="${2}"
+    else
+      echo "ERROR:: Incorrect nodename, must start with 'lanta-', omit to query all"
+      return 1
+    fi
+  fi
+
+  function srun_top_query(){
+    if [ -n "${SINGLE_NODE_NAME}" ] && [ "${SINGLE_NODE_NAME}" != "${2}" ]; then
+      return
+    fi
+    echo ""
+    echo "######################################"
+    echo "          top on ${2}"
+    echo "######################################"
+    srun --input none --jobid=${1} -w ${2} -N1 -c1 --ntasks-per-node=1 -u --overlap top -b -n1 -Eg -u ${USER}
+    RTC=$?
+    if [ ${RTC} -ne 0 ]; then
+      printf "\nUsage: cpu_usage <your-jobid> [one-of-the-job-nodename]\n\n"
+    fi
+    echo ""
+  }
+
+  __job_loop_over_node ${1} srun_top_query
+}
+
+
+function ps_stat(){
+  if [ -z "${1}" ] || ! [[ ${1} =~ ^[1-9][0-9_]*$ ]]; then
+    echo "Usage: ps_stat <your-jobid> [one-of-the-job-nodename]"
+    return 1
+  fi
+  local SINGLE_NODE_NAME=
+  if [ -n "${2}" ]; then
+    if [ "${2::6}" = "lanta-" ]; then
+      SINGLE_NODE_NAME="${2}"
+    else
+      echo "ERROR:: Incorrect nodename, must start with 'lanta-', omit to query all"
+      return 1
+    fi
+  fi
+
+  function srun_ps_query(){
+    if [ -n "${SINGLE_NODE_NAME}" ] && [ "${SINGLE_NODE_NAME}" != "${2}" ]; then
+      return
+    fi
+    echo ""
+    echo "######################################"
+    echo "          ps on ${2}"
+    echo "######################################"
+    local JOB_NODE_PIDS=$(sstat -j ${1} -i -n -o pids%2000 | grep "${2}" | awk '{list = $3} END {print list}')
+    if [ -n "${JOB_NODE_PIDS}" ]; then
+      srun --input none --jobid=${1} -w ${2} -N1 -c1 --ntasks-per-node=1 -u --overlap ps -p ${JOB_NODE_PIDS} -o user,pid,thcount,numa,pcpu,rss,vsz,start_time,etime,state,comm | numfmt --header --from-unit=1024 --to=iec-i --field 6,7 --padding 6
+      RTC=$?
+      if [ ${RTC} -ne 0 ]; then
+        printf "\nUsage: ps_stat <your-jobid> [one-of-the-job-nodename]\n\n"
+      fi
+      echo ""
+    else
+      printf "\nUsage: ps_stat <your-jobid> [one-of-the-job-nodename]\n\n"
+      echo "ERROR:: Cannot get the job's PIDs -- Please check that 1) The JobID and its nodename are correct 2) srun is used in the job script 3) The job is running"
+    fi
+  }
+
+  __job_loop_over_node ${1} srun_ps_query
+}
+
+function rss_usage(){
+  if [ -z "${1}" ] || ! [[ ${1} =~ ^[1-9][0-9_]*$ ]]; then
+    echo "Usage: rss_usage <your-jobid> [one-of-the-job-nodename]"
+    return 1
+  fi
+  local SINGLE_NODE_NAME=
+  if [ -n "${2}" ]; then
+    if [ "${2::6}" = "lanta-" ]; then
+      SINGLE_NODE_NAME="${2}"
+    else
+      echo "ERROR:: Incorrect nodename, must start with 'lanta-', omit to query all"
+      return 1
+    fi
+  fi
+
+  function srun_rss_query(){
+    if [ -n "${SINGLE_NODE_NAME}" ] && [ "${SINGLE_NODE_NAME}" != "${2}" ]; then
+      return
+    fi
+    local JOB_NODE_PIDS=$(sstat -j ${1} -i -n -o pids%2000 | grep "${2}" | awk '{list = $3} END {print list}')
+    if [ -n "${JOB_NODE_PIDS}" ]; then
+      echo ""
+      echo "Total RSS of all user's processes inside JobID ${1} on ${2}"
+      srun --input none --jobid=${1} -w ${2} -N1 -c1 --ntasks-per-node=1 -u --overlap ps -p ${JOB_NODE_PIDS} -o rss= | awk '{sum+=$1} END {printf "--> %d KiB = %.2f MiB = %.2f GiB \n", sum, sum/1024, sum/1024/1024}';
+      RTC=$?
+      if [ ${RTC} -ne 0 ]; then
+        printf "\nUsage: rss_usage <your-jobid> [one-of-the-job-nodename]\n\n"
+      fi
+      echo ""
+    else
+      printf "\nUsage: rss_usage <your-jobid> [one-of-the-job-nodename]\n\n"
+      echo "ERROR:: Cannot get the job's PIDs -- Please check that 1) The JobID and its nodename are correct 2) srun is used in the job script 3) The job is running"
+    fi
+  }
+
+  __job_loop_over_node ${1} srun_rss_query
+}
+
+
+function cpu_freq_usage(){
+  if [ -z "${1}" ] || ! [[ ${1} =~ ^[1-9][0-9_]*$ ]]; then
+    echo "Usage: cpu_freq_usage <your-jobid> [one-of-the-job-nodename]"
+    return 1
+  fi
+  local SINGLE_NODE_NAME=
+  if [ -n "${2}" ]; then
+    if [ "${2::6}" = "lanta-" ]; then
+      SINGLE_NODE_NAME="${2}"
+    else
+      echo "ERROR:: Incorrect nodename, must start with 'lanta-', omit to query all"
+      return 1
+    fi
+  fi
+
+  function srun_cpu_power_query(){
+    if [ -n "${SINGLE_NODE_NAME}" ] && [ "${SINGLE_NODE_NAME}" != "${2}" ]; then
+      return
+    fi
+    echo "######################################"
+    echo " CPUID_[${3}] on ${2}"
+    echo "######################################"
+    srun --input none --jobid=${1} -w ${2} -N1 -c1 --ntasks-per-node=1 -u --overlap cpupower --cpu ${3} frequency-info -f  | grep 'current CPU frequency' | awk '{printf "%3d:  %.3f MHz\n", NR, $4/1000 ;sum+=$4;count++} END  {if (count>0) printf "\nAveraged CPU frequency = %.3f GHz", sum/count/1000000}'
+    printf " on %s\n\n" ${2}
+  }
+
+  __job_loop_over_node ${1} srun_cpu_power_query
 }
 
 
@@ -262,14 +294,14 @@ function tojob(){
     fi
   else
     if [ -z "${GOTO_INDEX}" ]; then
-      printf " CHOICE  JOBID\n"
+      printf " CHOICE  --- MYQUEUE ---\n"
       local INDEX=0
       local INPUT_INDEX=0
       while read -r line
       do
         INDEX=$((${INDEX}+1))
         printf " %-5s   %-s\n" "[${INDEX}]" "${line}"
-      done < <(squeue --me --noheader --format=%i)
+      done < <(squeue --me --noheader)
       if [ ${INDEX} -eq 0 ]; then
         echo "You have no active jobs. Specify JobID explicitly."
         return 0
@@ -382,7 +414,7 @@ function tailjob(){
     if ! [[ ${SINGLE_JOBID} =~ ^[1-9][0-9_]*$ ]] ; then
       echo "ERROR:: JobID needs to be a non-zero integer."
       return 1
-    fi
+    fi 
     CHECKJOB=$(squeue --me --long | grep "${SINGLE_JOBID}")
     if [ -z "${CHECKJOB}" ]; then
       echo "The specified JobID is invalid. Is your job still active?"
@@ -424,6 +456,7 @@ function tailjob(){
     else
       printf "\n%s\n\n" "Cannot obtain the log file location for '${JOBNAME}' (JobID: ${JOBID})"
     fi
+    sleep 0.1
   }
   local DISPLAY_COUNT=0
   if [ -n "${SINGLE_JOBID}" ]; then
@@ -442,249 +475,3 @@ function tailjob(){
     echo "  There is NO running job."
   fi
 }
-
-
-function get_timeleft(){
-
-  local PRGNAME=${0##*/}
-  local TIMEUNIT=SEC
-  local ROUNDUP=
-  local JOBID=
-
-  this_usage () {
-    printf "Usage: ${PRGNAME} [OPTIONS]...\n"
-    printf "Parse remaining time availale for the job\n"
-    printf "\n"
-    printf "OPTIONS:\n"
-    printf "  -j <job-id>      specify single job id. Default: SLURM_JOB_ID\n"
-    printf "  -H, --hour       job timeleft in hours\n"
-    printf "  -M, --minute     job timeleft in minutes\n"
-    printf "  -S, --second     job timeleft in seconds (default)\n"
-    printf "  --round-up       return ceil, otherwise floor\n"
-    printf "  -h, --help       print this usage\n"
-    printf "\n"
-  }
-
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      -j)
-        if [ -n "${2}" ] && [[ ${2} =~ ^[1-9][0-9_]*$ ]] ; then
-          JOBID=$2
-        fi
-        shift
-        ;;
-      -H | --hour)
-        TIMEUNIT=HOUR
-        ;;
-      -M | --minute)
-        TIMEUNIT=MIN
-        ;;
-      -S | --second)
-        TIMEUNIT=SEC
-        ;;
-      --round-up)
-        ROUNDUP=TRUE
-        ;;
-      -h | --help)
-        this_usage
-        return 0
-        ;;
-      *)
-        # Silently ignore unknown arguments
-        ;;
-    esac
-    shift
-  done
-
-  if [ -z "${JOBID}" ]; then
-    if [ -z "${SLURM_JOBID}" ]; then
-      echo "${PRGNAME}: error: SLURM_JOBID is not specified."
-      return 1
-    else
-      JOBID=${SLURM_JOBID}
-    fi
-  fi
-
-  local timeleft=$(squeue -j "${JOBID}" -O timeleft --noheader)
-  timeleft=${timeleft%% *}
-
-  if [ -z "${timeleft}" ]; then
-    echo "${PRGNAME}: error: Cannot get timeleft from squeue. Is the job running?"
-    return 1
-  fi
-  if [ "${timeleft}" = "NOT_SET" ]; then
-    echo "${PRGNAME}: error: TimeLimit and TimeLeft have not yet been established."
-    return 1
-  fi
-  if [ "${timeleft}" = "UNLIMITED" ]; then
-    echo "${PRGNAME}: error: TimeLimit and TimeLeft is UNLIMITED."
-    return 1
-  fi
-  if [ "${timeleft}" = "INVALID" ]; then
-    echo "${PRGNAME}: error: TimeLeft is INVALID."
-    return 1
-  fi
-
-  IFS="-:" read -r DD HH MM SS <<< "${timeleft}"
-  if [ -z "${SS}" ]; then
-    DD=0
-    IFS="-:" read -r HH MM SS <<< "${timeleft}"
-  fi
-  if [ -z "${SS}" ]; then
-    DD=0
-    HH=0
-    IFS="-:" read -r MM SS <<< "${timeleft}"
-  fi
-
-  if [ "${ROUNDUP}" = "TRUE" ]; then
-    case "$TIMEUNIT" in
-      HOUR)
-        if [[ ${MM} -ne "0" || ${SS} -ne "0" ]]; then
-          echo $((24*${DD}+${HH}+1))
-        else
-          echo $((24*${DD}+${HH}))
-        fi
-        ;;
-      MIN)
-        if [ ${SS} -ne "0" ]; then
-          echo $((1440*${DD}+60*${HH}+${MM}+1))
-        else
-          echo $((1440*${DD}+60*${HH}+${MM}))
-        fi
-        ;;
-      *)
-        echo $((86400*${DD}+3600*${HH}+60*${MM}+${SS}))
-        ;;
-    esac
-  else
-    case "$TIMEUNIT" in
-      HOUR)
-        echo $((24*${DD}+${HH}))
-        ;;
-      MIN)
-        echo $((1440*${DD}+60*${HH}+${MM}))
-        ;;
-      *)
-        echo $((86400*${DD}+3600*${HH}+60*${MM}+${SS}))
-        ;;
-    esac
-  fi
-
-}
-
-
-function get_timelimit(){
-  local PRGNAME=${0##*/}
-  local TIMEUNIT=SEC
-  local ROUNDUP=
-  local JOBID=
-
-  this_usage () {
-    printf "Usage: ${PRGNAME} [OPTIONS]...\n"
-    printf "Parse timelimit of the Slurm job\n"
-    printf "\n"
-    printf "OPTIONS:\n"
-    printf "  -j <job-id>      specify single job id. Default: SLURM_JOB_ID\n"
-    printf "  -H, --hour       job timelimit in hours\n"
-    printf "  -M, --minute     job timelimit in minutes\n"
-    printf "  -S, --second     job timelimit in seconds (default)\n"
-    printf "  --round-up       return ceil, otherwise floor\n"
-    printf "  -h, --help       print this usage\n"
-    printf "\n"
-  }
-
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      -j)
-        if [ -n "${2}" ] && [[ ${2} =~ ^[1-9][0-9_]*$ ]] ; then
-          JOBID=$2
-        fi
-        shift
-        ;;
-      -H | --hour)
-        TIMEUNIT=HOUR
-        ;;
-      -M | --minute)
-        TIMEUNIT=MIN
-        ;;
-      -S | --second)
-        TIMEUNIT=SEC
-        ;;
-      --round-up)
-        ROUNDUP=TRUE
-        ;;
-      -h | --help)
-        this_usage
-        return 0
-        ;;
-      *)
-        # Silently ignore unknown arguments
-        ;;
-    esac
-    shift
-  done
-
-  if [ -z "${JOBID}" ]; then
-    if [ -z "${SLURM_JOBID}" ]; then
-      echo "${PRGNAME}: error: SLURM_JOBID is not specified."
-      return 1
-    else
-      JOBID=${SLURM_JOBID}
-    fi
-  fi
-
-  local timelimit=$(scontrol --quiet show job "${JOBID}" | grep 'TimeLimit=')
-  timelimit=${timelimit#*TimeLimit=}
-  timelimit=${timelimit%% *}
-
-  if [ -z "${timelimit}" ]; then
-    timelimit=$(sacct -j "${JOBID}" --format=timelimit -X --noheader | tr -d ' ')
-  fi
-
-  if [ -z "${timelimit}" ]; then
-    echo "${PRGNAME}: error: Cannot get timelimit from either scontrol or sacct."
-    return 1
-  fi
-
-  if [[ ${timelimit} != *-* ]]; then
-    timelimit="0-${timelimit}"
-  fi
-
-  IFS="-:" read -r DD HH MM SS <<< "${timelimit}"
-
-  if [ "${ROUNDUP}" = "TRUE" ]; then
-    case "$TIMEUNIT" in
-      HOUR)
-        if [[ ${MM} -ne "0" || ${SS} -ne "0" ]]; then
-          echo $((24*${DD}+${HH}+1))
-        else
-          echo $((24*${DD}+${HH}))
-        fi
-        ;;
-      MIN)
-        if [ ${SS} -ne "0" ]; then
-          echo $((1440*${DD}+60*${HH}+${MM}+1))
-        else
-          echo $((1440*${DD}+60*${HH}+${MM}))
-        fi
-        ;;
-      *)
-        echo $((86400*${DD}+3600*${HH}+60*${MM}+${SS}))
-        ;;
-    esac
-  else
-    case "$TIMEUNIT" in
-      HOUR)
-        echo $((24*${DD}+${HH}))
-        ;;
-      MIN)
-        echo $((1440*${DD}+60*${HH}+${MM}))
-        ;;
-      *)
-        echo $((86400*${DD}+3600*${HH}+60*${MM}+${SS}))
-        ;;
-    esac
-  fi
-
-}
-
